@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
 const queueItem = v.object({
@@ -49,6 +49,29 @@ function validateVideo(videoId: string, url: string) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new Error("無效的 YouTube 影片網址");
   if (!url.startsWith("https://")) throw new Error("影片網址必須使用 HTTPS");
 }
+
+export const getYouTubeTitle = action({
+  args: { videoId: v.string() },
+  returns: v.string(),
+  handler: async (_ctx, args) => {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(args.videoId)) throw new Error("無效的 YouTube 影片網址");
+    const fallbackTitle = `YouTube · ${args.videoId}`;
+    const videoUrl = `https://www.youtube.com/watch?v=${args.videoId}`;
+
+    try {
+      const response = await fetch(
+        `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(videoUrl)}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (!response.ok) return fallbackTitle;
+      const metadata = (await response.json()) as { title?: unknown };
+      if (typeof metadata.title !== "string") return fallbackTitle;
+      return metadata.title.trim().slice(0, 120) || fallbackTitle;
+    } catch {
+      return fallbackTitle;
+    }
+  },
+});
 
 async function recordCurrent(ctx: MutationCtx, state: Doc<"roomStates">) {
   const { currentVideoId, currentUrl, currentTitle } = state;

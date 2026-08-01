@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ChevronDownIcon, ChevronUpIcon, LinkIcon, PlayIcon, TrashIcon } from "./Icons";
@@ -26,6 +26,7 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const getYouTubeTitle = useAction(api.player.getYouTubeTitle);
   const enqueue = useMutation(api.player.enqueue);
   const removeQueued = useMutation(api.player.removeQueued);
   const moveQueued = useMutation(api.player.moveQueued);
@@ -43,7 +44,13 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
     setBusy(true);
     setError("");
     try {
-      await enqueue({ roomId, ...parsed, title: `YouTube · ${parsed.videoId}` });
+      let title = `YouTube · ${parsed.videoId}`;
+      try {
+        title = await getYouTubeTitle({ videoId: parsed.videoId });
+      } catch {
+        // Metadata lookup must never prevent a valid video from being queued.
+      }
+      await enqueue({ roomId, ...parsed, title });
       setUrl("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "加入失敗，請再試一次");

@@ -1,5 +1,15 @@
 import { v } from "convex/values";
-import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
 const queueItem = v.object({
@@ -50,26 +60,192 @@ function validateVideo(videoId: string, url: string) {
   if (!url.startsWith("https://")) throw new Error("影片網址必須使用 HTTPS");
 }
 
+function fallbackTitle(videoId: string) {
+  return `YouTube · ${videoId}`;
+}
+
+function needsTitle(videoId: string, title: string) {
+  return title === videoId || title === fallbackTitle(videoId);
+}
+
+async function fetchYouTubeTitle(videoId: string) {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  try {
+    const response = await fetch(
+      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(videoUrl)}`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!response.ok) return null;
+    const metadata = (await response.json()) as { title?: unknown };
+    if (typeof metadata.title !== "string") return null;
+    return metadata.title.trim().slice(0, 120) || null;
+  } catch {
+    return null;
+  }
+}
+
 export const getYouTubeTitle = action({
   args: { videoId: v.string() },
   returns: v.string(),
   handler: async (_ctx, args) => {
     if (!/^[A-Za-z0-9_-]{11}$/.test(args.videoId)) throw new Error("無效的 YouTube 影片網址");
-    const fallbackTitle = `YouTube · ${args.videoId}`;
-    const videoUrl = `https://www.youtube.com/watch?v=${args.videoId}`;
+    return (await fetchYouTubeTitle(args.videoId)) ?? fallbackTitle(args.videoId);
+  },
+});
 
-    try {
-      const response = await fetch(
-        `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(videoUrl)}`,
-        { signal: AbortSignal.timeout(5000) },
-      );
-      if (!response.ok) return fallbackTitle;
-      const metadata = (await response.json()) as { title?: unknown };
-      if (typeof metadata.title !== "string") return fallbackTitle;
-      return metadata.title.trim().slice(0, 120) || fallbackTitle;
-    } catch {
-      return fallbackTitle;
+export const getQueueItemForTitle = internalQuery({
+  args: { roomId: v.string(), itemId: v.id("queueItems") },
+  returns: v.union(v.object({ videoId: v.string() }), v.null()),
+  handler: async (ctx, args) => {
+    validateRoomId(args.roomId);
+    const item = await ctx.db.get(args.itemId);
+    if (!item || item.roomId !== args.roomId || !needsTitle(item.videoId, item.title)) return null;
+    return { videoId: item.videoId };
+  },
+});
+
+export const listTitleBackfillCandidates = internalQuery({
+  args: { roomId: v.string(), limit: v.number() },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    validateRoomId(args.roomId);
+    const limit = Math.max(1, Math.min(50, Math.floor(args.limit)));
+    const state = await ctx.db
+      .query("roomStates")
+      .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
+      .unique();
+    if (!state) return [];
+
+    const queued = await ctx.db
+      .query("queueItems")
+      .withIndex("by_room_and_status_and_position", (q) =>
+        q.eq("roomId", args.roomId).eq("status", "queued"),
+      )
+      .order("asc")
+      .take(100);
+    const history = await ctx.db
+      .query("playHistory")
+      .withIndex("by_room_and_played_at", (q) => q.eq("roomId", args.roomId))
+      .order("desc")
+      .take(200);
+    const candidates = new Set<string>();
+
+    if (
+      state.currentVideoId &&
+      state.currentTitle &&
+      needsTitle(state.currentVideoId, state.currentTitle)
+    ) {
+      candidates.add(state.currentVideoId);
     }
+    for (const item of queued) {
+      if (needsTitle(item.videoId, item.title)) candidates.add(item.videoId);
+      if (candidates.size >= limit) break;
+    }
+    if (candidates.size < limit) {
+      for (const item of history) {
+        if (needsTitle(item.videoId, item.title)) candidates.add(item.videoId);
+        if (candidates.size >= limit) break;
+      }
+    }
+    return Array.from(candidates).slice(0, limit);
+  },
+});
+
+export const applyYouTubeTitle = internalMutation({
+  args: { roomId: v.string(), videoId: v.string(), title: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    validateRoomId(args.roomId);
+    const title = args.title.trim().slice(0, 120);
+    if (!title || !/^[A-Za-z0-9_-]{11}$/.test(args.videoId)) return 0;
+    const state = await getState(ctx, args.roomId);
+    if (!state) return 0;
+    let updated = 0;
+
+    if (state.currentVideoId === args.videoId && state.currentTitle !== title) {
+      await ctx.db.patch(state._id, { currentTitle: title });
+      updated += 1;
+    }
+    if (state.currentQueueItemId) {
+      const currentItem = await ctx.db.get(state.currentQueueItemId);
+      if (currentItem?.videoId === args.videoId && currentItem.title !== title) {
+        await ctx.db.patch(currentItem._id, { title });
+        updated += 1;
+      }
+    }
+    const queued = await ctx.db
+      .query("queueItems")
+      .withIndex("by_room_and_status_and_position", (q) =>
+        q.eq("roomId", args.roomId).eq("status", "queued"),
+      )
+      .take(100);
+    for (const item of queued) {
+      if (item.videoId === args.videoId && item.title !== title) {
+        await ctx.db.patch(item._id, { title });
+        updated += 1;
+      }
+    }
+    const history = await ctx.db
+      .query("playHistory")
+      .withIndex("by_room_and_video_id", (q) =>
+        q.eq("roomId", args.roomId).eq("videoId", args.videoId),
+      )
+      .take(100);
+    for (const item of history) {
+      if (item.title !== title) {
+        await ctx.db.patch(item._id, { title });
+        updated += 1;
+      }
+    }
+    return updated;
+  },
+});
+
+export const refreshYouTubeTitle = action({
+  args: { roomId: v.string(), itemId: v.id("queueItems") },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => {
+    const item: { videoId: string } | null = await ctx.runQuery(
+      internal.player.getQueueItemForTitle,
+      args,
+    );
+    if (!item) return false;
+    const title = await fetchYouTubeTitle(item.videoId);
+    if (!title) return false;
+    const updated: number = await ctx.runMutation(internal.player.applyYouTubeTitle, {
+      roomId: args.roomId,
+      videoId: item.videoId,
+      title,
+    });
+    return updated > 0;
+  },
+});
+
+export const backfillYouTubeTitles = internalAction({
+  args: { roomId: v.string(), limit: v.optional(v.number()) },
+  returns: v.object({ requested: v.number(), updated: v.number(), unresolved: v.number() }),
+  handler: async (ctx, args): Promise<{ requested: number; updated: number; unresolved: number }> => {
+    const candidates: string[] = await ctx.runQuery(internal.player.listTitleBackfillCandidates, {
+      roomId: args.roomId,
+      limit: args.limit ?? 25,
+    });
+    let updated = 0;
+    let unresolved = 0;
+
+    for (const videoId of candidates) {
+      const title = await fetchYouTubeTitle(videoId);
+      if (!title) {
+        unresolved += 1;
+        continue;
+      }
+      const changed = await ctx.runMutation(internal.player.applyYouTubeTitle, {
+        roomId: args.roomId,
+        videoId,
+        title,
+      });
+      if (changed > 0) updated += 1;
+    }
+    return { requested: candidates.length, updated, unresolved };
   },
 });
 

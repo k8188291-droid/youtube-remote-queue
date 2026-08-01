@@ -26,7 +26,7 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const getYouTubeTitle = useAction(api.player.getYouTubeTitle);
+  const refreshYouTubeTitle = useAction(api.player.refreshYouTubeTitle);
   const enqueue = useMutation(api.player.enqueue);
   const removeQueued = useMutation(api.player.removeQueued);
   const moveQueued = useMutation(api.player.moveQueued);
@@ -44,14 +44,15 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
     setBusy(true);
     setError("");
     try {
-      let title = `YouTube · ${parsed.videoId}`;
-      try {
-        title = await getYouTubeTitle({ videoId: parsed.videoId });
-      } catch {
-        // Metadata lookup must never prevent a valid video from being queued.
-      }
-      await enqueue({ roomId, ...parsed, title });
+      const itemId = await enqueue({
+        roomId,
+        ...parsed,
+        title: `YouTube · ${parsed.videoId}`,
+      });
       setUrl("");
+      void refreshYouTubeTitle({ roomId, itemId }).catch(() => {
+        // The queued item remains playable when metadata lookup fails.
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "加入失敗，請再試一次");
     } finally {

@@ -51,13 +51,32 @@ function validateVideo(videoId: string, url: string) {
 }
 
 async function recordCurrent(ctx: MutationCtx, state: Doc<"roomStates">) {
-  if (!state.currentVideoId || !state.currentUrl || !state.currentTitle) return;
+  const { currentVideoId, currentUrl, currentTitle } = state;
+  if (!currentVideoId || !currentUrl || !currentTitle) return;
+  const playedAtMs = Date.now();
+  const existing = await ctx.db
+    .query("playHistory")
+    .withIndex("by_room_and_video_id", (q) =>
+      q.eq("roomId", state.roomId).eq("videoId", currentVideoId),
+    )
+    .take(100);
+
+  if (existing[0]) {
+    await ctx.db.patch(existing[0]._id, {
+      url: currentUrl,
+      title: currentTitle,
+      playedAtMs,
+    });
+    for (const duplicate of existing.slice(1)) await ctx.db.delete(duplicate._id);
+    return;
+  }
+
   await ctx.db.insert("playHistory", {
     roomId: state.roomId,
-    videoId: state.currentVideoId,
-    url: state.currentUrl,
-    title: state.currentTitle,
-    playedAtMs: Date.now(),
+    videoId: currentVideoId,
+    url: currentUrl,
+    title: currentTitle,
+    playedAtMs,
   });
 }
 
@@ -116,11 +135,19 @@ export const getRoom = query({
       )
       .order("asc")
       .take(100);
-    const history = await ctx.db
+    const historyRows = await ctx.db
       .query("playHistory")
       .withIndex("by_room_and_played_at", (q) => q.eq("roomId", args.roomId))
       .order("desc")
-      .take(50);
+      .take(200);
+    const seenVideoIds = new Set<string>();
+    const history = historyRows
+      .filter((item) => {
+        if (seenVideoIds.has(item.videoId)) return false;
+        seenVideoIds.add(item.videoId);
+        return true;
+      })
+      .slice(0, 50);
 
     return {
       roomId: state.roomId,

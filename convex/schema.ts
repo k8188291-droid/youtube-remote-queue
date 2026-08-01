@@ -41,5 +41,7 @@ export default defineSchema({
     url: v.string(),
     title: v.string(),
     playedAtMs: v.number(),
-  }).index("by_room_and_played_at", ["roomId", "playedAtMs"]),
+  })
+    .index("by_room_and_played_at", ["roomId", "playedAtMs"])
+    .index("by_room_and_video_id", ["roomId", "videoId"]),
 });

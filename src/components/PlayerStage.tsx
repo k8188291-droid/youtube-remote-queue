@@ -36,6 +36,7 @@ export function PlayerStage(props: PlayerStageProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const loadedVideoRef = useRef<string | null>(null);
+  const playbackAllowedRef = useRef(false);
   const lastSeekVersion = useRef(props.seekVersion);
   const [ready, setReady] = useState(false);
   const [needsGesture, setNeedsGesture] = useState(true);
@@ -56,7 +57,15 @@ export function PlayerStage(props: PlayerStageProps) {
             setReady(true);
           },
           onStateChange: ({ data }) => {
+            if (data === window.YT?.PlayerState.PLAYING) {
+              playbackAllowedRef.current = true;
+              setNeedsGesture(false);
+            }
             if (data === window.YT?.PlayerState.ENDED) void advance({ roomId: props.roomId });
+          },
+          onAutoplayBlocked: () => {
+            playbackAllowedRef.current = false;
+            setNeedsGesture(true);
           },
           onError: () => void advance({ roomId: props.roomId }),
         },
@@ -73,9 +82,14 @@ export function PlayerStage(props: PlayerStageProps) {
     const player = playerRef.current;
     if (!player || !ready || !props.videoId || loadedVideoRef.current === props.videoId) return;
     loadedVideoRef.current = props.videoId;
-    player.cueVideoById({ videoId: props.videoId, startSeconds: props.positionSeconds });
-    setNeedsGesture(true);
-  }, [props.videoId, props.positionSeconds, ready]);
+    if (playbackAllowedRef.current && props.isPlaying) {
+      player.loadVideoById({ videoId: props.videoId, startSeconds: props.positionSeconds });
+      setNeedsGesture(false);
+    } else {
+      player.cueVideoById({ videoId: props.videoId, startSeconds: props.positionSeconds });
+      if (!playbackAllowedRef.current) setNeedsGesture(true);
+    }
+  }, [props.videoId, props.positionSeconds, props.isPlaying, ready]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -104,6 +118,7 @@ export function PlayerStage(props: PlayerStageProps) {
   }, [props.roomId, reportProgress]);
 
   async function activate() {
+    playbackAllowedRef.current = true;
     setNeedsGesture(false);
     playerRef.current?.playVideo();
     await setPlaying({ roomId: props.roomId, isPlaying: true });

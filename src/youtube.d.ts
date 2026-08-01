@@ -20,11 +20,12 @@ interface Window {
         events?: {
           onReady?: (event: { target: YouTubePlayer }) => void;
           onStateChange?: (event: { data: number; target: YouTubePlayer }) => void;
+          onAutoplayBlocked?: (event: { target: YouTubePlayer }) => void;
           onError?: () => void;
         };
       },
     ) => YouTubePlayer;
-    PlayerState: { ENDED: number };
+    PlayerState: { ENDED: number; PLAYING: number };
   };
   onYouTubeIframeAPIReady?: () => void;
 }

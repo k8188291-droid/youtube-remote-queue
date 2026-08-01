@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
 const queueItem = v.object({
@@ -118,6 +118,22 @@ async function playHistoryItem(
   });
 }
 
+async function getRecentUniqueHistory(ctx: Pick<QueryCtx, "db">, roomId: string) {
+  const historyRows = await ctx.db
+    .query("playHistory")
+    .withIndex("by_room_and_played_at", (q) => q.eq("roomId", roomId))
+    .order("desc")
+    .take(200);
+  const seenVideoIds = new Set<string>();
+  return historyRows
+    .filter((item) => {
+      if (seenVideoIds.has(item.videoId)) return false;
+      seenVideoIds.add(item.videoId);
+      return true;
+    })
+    .slice(0, 50);
+}
+
 export const getRoom = query({
   args: { roomId: v.string() },
   returns: v.union(roomSnapshot, v.null()),
@@ -135,19 +151,7 @@ export const getRoom = query({
       )
       .order("asc")
       .take(100);
-    const historyRows = await ctx.db
-      .query("playHistory")
-      .withIndex("by_room_and_played_at", (q) => q.eq("roomId", args.roomId))
-      .order("desc")
-      .take(200);
-    const seenVideoIds = new Set<string>();
-    const history = historyRows
-      .filter((item) => {
-        if (seenVideoIds.has(item.videoId)) return false;
-        seenVideoIds.add(item.videoId);
-        return true;
-      })
-      .slice(0, 50);
+    const history = await getRecentUniqueHistory(ctx, args.roomId);
 
     return {
       roomId: state.roomId,
@@ -308,8 +312,8 @@ export const advance = mutation({
   handler: async (ctx, args) => {
     const state = await getState(ctx, args.roomId);
     if (!state) throw new Error("找不到播放房間");
-    await recordCurrent(ctx, state);
     if (state.currentQueueItemId) {
+      await recordCurrent(ctx, state);
       await ctx.db.patch(state.currentQueueItemId, { status: "played", playedAtMs: Date.now() });
     }
     const next = await ctx.db
@@ -323,12 +327,11 @@ export const advance = mutation({
       await playQueueItem(ctx, state, next[0]);
       return null;
     }
-    const history = await ctx.db
-      .query("playHistory")
-      .withIndex("by_room_and_played_at", (q) => q.eq("roomId", args.roomId))
-      .order("desc")
-      .take(50);
-    const fallback = history.find((item) => item.videoId !== state.currentVideoId) ?? history[0];
+    const history = await getRecentUniqueHistory(ctx, args.roomId);
+    const currentIndex = history.findIndex((item) => item.videoId === state.currentVideoId);
+    const fallback = history.length > 0
+      ? history[currentIndex >= 0 ? (currentIndex + 1) % history.length : 0]
+      : undefined;
     if (fallback) await playHistoryItem(ctx, state, fallback);
     else {
       await ctx.db.patch(state._id, {
@@ -352,12 +355,11 @@ export const previous = mutation({
   handler: async (ctx, args) => {
     const state = await getState(ctx, args.roomId);
     if (!state) throw new Error("找不到播放房間");
-    const history = await ctx.db
-      .query("playHistory")
-      .withIndex("by_room_and_played_at", (q) => q.eq("roomId", args.roomId))
-      .order("desc")
-      .take(50);
-    const target = history.find((item) => item.videoId !== state.currentVideoId);
+    const history = await getRecentUniqueHistory(ctx, args.roomId);
+    const currentIndex = history.findIndex((item) => item.videoId === state.currentVideoId);
+    const target = history.length > 0
+      ? history[currentIndex >= 0 ? (currentIndex - 1 + history.length) % history.length : 0]
+      : undefined;
     if (target) {
       if (state.currentQueueItemId) await ctx.db.patch(state.currentQueueItemId, { status: "queued" });
       await playHistoryItem(ctx, state, target);
@@ -375,6 +377,23 @@ export const replayHistory = mutation({
     if (!state || !item || item.roomId !== args.roomId) throw new Error("找不到播放紀錄");
     if (state.currentQueueItemId) await ctx.db.patch(state.currentQueueItemId, { status: "queued" });
     await playHistoryItem(ctx, state, item);
+    return null;
+  },
+});
+
+export const deleteHistory = mutation({
+  args: { roomId: v.string(), historyId: v.id("playHistory") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.historyId);
+    if (!item || item.roomId !== args.roomId) return null;
+    const matches = await ctx.db
+      .query("playHistory")
+      .withIndex("by_room_and_video_id", (q) =>
+        q.eq("roomId", args.roomId).eq("videoId", item.videoId),
+      )
+      .take(100);
+    for (const match of matches) await ctx.db.delete(match._id);
     return null;
   },
 });

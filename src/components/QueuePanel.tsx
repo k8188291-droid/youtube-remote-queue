@@ -31,6 +31,7 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
   const moveQueued = useMutation(api.player.moveQueued);
   const clearQueue = useMutation(api.player.clearQueue);
   const replayHistory = useMutation(api.player.replayHistory);
+  const deleteHistory = useMutation(api.player.deleteHistory);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -108,7 +109,10 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
                 <p className="truncate font-bold">{item.title}</p>
                 <p className="text-xs text-zinc-500">{new Date(item.playedAtMs).toLocaleString("zh-TW")}</p>
               </div>
-              <button className="mini-button accent" onClick={() => replayHistory({ roomId, historyId: item.id })} aria-label="立即播放"><PlayIcon /></button>
+              <div className="flex gap-1">
+                <button className="mini-button accent" onClick={() => replayHistory({ roomId, historyId: item.id })} aria-label="立即播放"><PlayIcon /></button>
+                <button className="mini-button danger" onClick={() => deleteHistory({ roomId, historyId: item.id })} aria-label="刪除播放紀錄"><TrashIcon /></button>
+              </div>
             </article>
           ))}
         </div>

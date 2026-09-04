@@ -132,7 +132,7 @@ function RemoteView({ roomId }: { roomId: string | null }) {
         <section className="mt-5 overflow-hidden rounded-[2rem] border border-white/15 bg-zinc-900">
           <div className="grid gap-5 p-5 sm:grid-cols-[180px_1fr] sm:items-center">
             {room.currentVideoId ? <img src={`https://i.ytimg.com/vi/${room.currentVideoId}/mqdefault.jpg`} alt="目前播放影片縮圖" className="aspect-video w-full rounded-2xl object-cover sm:aspect-square" /> : <div className="grid aspect-video place-items-center rounded-2xl bg-zinc-800 text-sm text-zinc-500 sm:aspect-square">尚未點播</div>}
-            <div className="min-w-0"><p className="eyebrow">NOW PLAYING</p><h1 className="mt-2 truncate text-2xl font-black sm:text-4xl">{room.currentTitle ?? "等待第一支影片"}</h1><p className="mt-2 text-sm text-zinc-500">{room.isPlaying ? "播放中" : "已暫停"} · {Math.floor(room.positionSeconds / 60)}:{String(Math.floor(room.positionSeconds % 60)).padStart(2, "0")}</p></div>
+            <div className="min-w-0"><p className="eyebrow">NOW PLAYING</p><h1 className="mt-2 line-clamp-2 break-words text-2xl font-black sm:text-4xl" title={room.currentTitle ?? undefined}>{room.currentTitle ?? "等待第一支影片"}</h1><p className="mt-2 text-sm text-zinc-500">{room.isPlaying ? "播放中" : "已暫停"} · {Math.floor(room.positionSeconds / 60)}:{String(Math.floor(room.positionSeconds % 60)).padStart(2, "0")}</p></div>
           </div>
           <div className="border-t border-zinc-700 p-4"><Controls roomId={roomId} isPlaying={room.isPlaying} volume={room.volume} positionSeconds={room.positionSeconds} durationSeconds={room.durationSeconds} disabled={!room.currentVideoId} /></div>
         </section>

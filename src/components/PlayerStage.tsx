@@ -137,7 +137,7 @@ export function PlayerStage(props: PlayerStageProps) {
           <span className="flex flex-col items-center gap-4"><span className="grid size-20 place-items-center rounded-full bg-red-600 shadow-[0_0_50px_rgba(220,38,38,.55)]"><PlayIcon className="ml-1 size-9" /></span><span className="text-lg font-black">觸碰啟用播放器</span></span>
         </button>
       )}
-      {props.title && <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-5 pt-16"><p className="truncate text-lg font-black">{props.title}</p></div>}
+      {props.title && <div className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 bg-gradient-to-t from-black/90 to-transparent p-5 pt-16"><p className="truncate text-lg font-black" title={props.title}>{props.title}</p></div>}
     </section>
   );
 }

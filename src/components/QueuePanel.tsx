@@ -90,12 +90,12 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
             <EmptyState text="目前沒有新點播，播完後會從歷史紀錄自動接續。" />
           ) : queue.map((item, index) => (
             <article className="queue-row" key={item.id}>
-              <img src={`https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`} alt="" className="h-14 w-24 rounded-xl object-cover" />
+              <img src={`https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`} alt="" className="h-14 w-24 shrink-0 rounded-xl object-cover" />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-bold">{item.title}</p>
-                <p className="text-xs text-zinc-500">#{index + 1} · {item.videoId}</p>
+                <p className="queue-title" title={item.title}>{item.title}</p>
+                <p className="truncate text-xs text-zinc-500">#{index + 1} · {item.videoId}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="queue-actions">
                 <button className="mini-button" onClick={() => moveQueued({ roomId, itemId: item.id, direction: "up" })} disabled={index === 0} aria-label="往上移"><ChevronUpIcon /></button>
                 <button className="mini-button" onClick={() => moveQueued({ roomId, itemId: item.id, direction: "down" })} disabled={index === queue.length - 1} aria-label="往下移"><ChevronDownIcon /></button>
                 <button className="mini-button danger" onClick={() => removeQueued({ roomId, itemId: item.id })} aria-label="移除"><TrashIcon /></button>
@@ -112,12 +112,12 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
         <div className="mt-4 space-y-2">
           {history.length === 0 ? <EmptyState text="播放過的影片會出現在這裡。" /> : history.map((item) => (
             <article className="queue-row" key={item.id}>
-              <img src={`https://i.ytimg.com/vi/${item.videoId}/default.jpg`} alt="" className="size-14 rounded-xl object-cover" />
+              <img src={`https://i.ytimg.com/vi/${item.videoId}/default.jpg`} alt="" className="size-14 shrink-0 rounded-xl object-cover" />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-bold">{item.title}</p>
-                <p className="text-xs text-zinc-500">{new Date(item.playedAtMs).toLocaleString("zh-TW")}</p>
+                <p className="queue-title" title={item.title}>{item.title}</p>
+                <p className="truncate text-xs text-zinc-500">{new Date(item.playedAtMs).toLocaleString("zh-TW")}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="queue-actions">
                 <button className="mini-button accent" onClick={() => replayHistory({ roomId, historyId: item.id })} aria-label="立即播放"><PlayIcon /></button>
                 <button className="mini-button danger" onClick={() => deleteHistory({ roomId, historyId: item.id })} aria-label="刪除播放紀錄"><TrashIcon /></button>
               </div>

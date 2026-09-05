@@ -30,6 +30,7 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
   const enqueue = useMutation(api.player.enqueue);
   const removeQueued = useMutation(api.player.removeQueued);
   const moveQueued = useMutation(api.player.moveQueued);
+  const playQueued = useMutation(api.player.playQueued);
   const clearQueue = useMutation(api.player.clearQueue);
   const replayHistory = useMutation(api.player.replayHistory);
   const deleteHistory = useMutation(api.player.deleteHistory);
@@ -96,6 +97,7 @@ export function QueuePanel({ roomId, queue, history }: { roomId: string; queue: 
                 <p className="truncate text-xs text-zinc-500">#{index + 1} · {item.videoId}</p>
               </div>
               <div className="queue-actions">
+                <button className="mini-button accent" onClick={() => playQueued({ roomId, itemId: item.id })} aria-label="立即播放"><PlayIcon /></button>
                 <button className="mini-button" onClick={() => moveQueued({ roomId, itemId: item.id, direction: "up" })} disabled={index === 0} aria-label="往上移"><ChevronUpIcon /></button>
                 <button className="mini-button" onClick={() => moveQueued({ roomId, itemId: item.id, direction: "down" })} disabled={index === queue.length - 1} aria-label="往下移"><ChevronDownIcon /></button>
                 <button className="mini-button danger" onClick={() => removeQueued({ roomId, itemId: item.id })} aria-label="移除"><TrashIcon /></button>

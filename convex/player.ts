@@ -580,6 +580,28 @@ export const replayHistory = mutation({
   },
 });
 
+export const playQueued = mutation({
+  args: { roomId: v.string(), itemId: v.id("queueItems") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    validateRoomId(args.roomId);
+    const state = await getState(ctx, args.roomId);
+    const item = await ctx.db.get(args.itemId);
+    if (!state || !item || item.roomId !== args.roomId || item.status !== "queued") {
+      throw new Error("找不到播放清單項目");
+    }
+
+    if (state.currentQueueItemId) {
+      const currentItem = await ctx.db.get(state.currentQueueItemId);
+      if (currentItem?.roomId === args.roomId && currentItem.status === "playing") {
+        await ctx.db.patch(currentItem._id, { status: "queued" });
+      }
+    }
+    await playQueueItem(ctx, state, item);
+    return null;
+  },
+});
+
 export const deleteHistory = mutation({
   args: { roomId: v.string(), historyId: v.id("playHistory") },
   returns: v.null(),
